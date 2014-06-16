@@ -46,7 +46,7 @@ graph_db = neo4j.GraphDatabaseService("http://www.faprehab.com:7474/db/data/")
 #a sexuality score
 is_gay = 0
 #one of several hundred predetermined porn categories
-begin_category = {"amateur" : 1}
+begin_category = {"amateur" : 1, "college": 1}
 
 ####################################################
 
@@ -101,7 +101,14 @@ class video:
 			print newBlog.b_name
 		for li in soup.findAll(True, {'class': re.compile(r'\breblog\b')}):
 			for a in li.findAll(True, {'class': re.compile(r'\btumblelog\b')}):
-				self.rebloggers.append(bloggerObjectBuilder(a.text))
+				x = bloggerObjectBuilder(a.text)
+				b = False
+				for y in self.rebloggers:
+					if x.b_name == y.b_name:
+						b = True
+				if b == False:
+					self.rebloggers.append(x)
+				b = False
 			for a in li.findAll(True, {'class': re.compile(r'\bsource_tumblelog\b')}):
 				x = bloggerObjectBuilder(a.text)
 				b = False
@@ -140,17 +147,8 @@ class video:
 			query2 = neo4j.CypherQuery(graph_db, "MATCH (b:Blogger {name: \""+blog.b_name+"\"}) RETURN b").execute()
 			#if blogger already exists
 			if query2:
-				query3 = ""
 				for blog_key, blog_val in blog.category.iteritems():
-					query3 = neo4j.CypherQuery(graph_db, """MATCH (b:Blogger {name: \""""+blog.b_name+"""\"}), 
-												(c:Category {name: \""""+blog_key+"""\"}) 
-												MERGE (b)-[r:PORN_TYPE]-(c) 
-												ON CREATE SET r.connections="""+str(blog_val)+""" 
-												ON MATCH SET r.connections= r.connections+"""+str(blog_val)+"""
-												RETURN c.name, r.connections""").execute()
-				#get the category connections and store them in the blog object
-				# for record in query3.stream():
-				# 	blog.category[record["c.name"]] = record["r.connections"]
+					neo4j.CypherQuery(graph_db, """MATCH (b:Blogger {name: \""""+blog.b_name+"""\"}), (c:Category {name: \""""+blog_key+"""\"}) MERGE (b)-[r:PORN_TYPE]-(c) ON CREATE SET r.connections="""+str(blog_val)+""" ON MATCH SET r.connections= r.connections+"""+str(blog_val)).execute()
 				print "blog found: "+blog.b_name
 			else:
 				#create the blogger node, create a relationship between the blogger and the video
@@ -160,6 +158,10 @@ class video:
 				for key, value in begin_category.iteritems():
 					neo4j.CypherQuery(graph_db, "MATCH (c:Category {name:'"+key+"'}) MATCH (b:Blogger) WHERE b.name = '"+blog.b_name+"' CREATE UNIQUE (c)-[r:PORN_TYPE {connections: "+str(value)+"}]-(b)").execute()
 				print "new blog added: "+blog.b_name
+		for blog in self.rebloggers:
+			query4 = neo4j.CypherQuery(graph_db, """MATCH (b:Blogger {name: \""""+blog.b_name+"""\"})-[r:PORN_TYPE]-(c:Category) RETURN c.name, r.connections;""")
+			for record in query4.stream():
+				blog.category[record["c.name"]] = record["r.connections"]
 			#add up all blogger dictionary values
 			self.category = Counter(self.category) + Counter(blog.category)
 		#use those values to create relationships between video and categories
@@ -270,3 +272,6 @@ start = bloggerObjectBuilder("a-little-alone-time.tumblr.com")
 start.getVideos()
 start.unvisited_posts[0].getRebloggers()
 start.unvisited_posts[0].analyzeAndUpload()
+# for x in start.unvisited_posts:
+# 	x.getRebloggers()
+# 	x.analyzeAndUpload()
